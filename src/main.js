@@ -1,4 +1,4 @@
-import { Actor, Dataset, log } from 'apify';
+import { Actor, Dataset, KeyValueStore, log } from 'apify';
 import { PlaywrightCrawler, sleep } from 'crawlee';
 
 const START_URL = 'https://www.bioladen.de/bio-haendler-suche';
@@ -13,12 +13,17 @@ async function acceptCookies(page) {
   ];
   for (const sel of candidates) {
     const b = page.locator(sel);
-    if (await b.count()) { await b.first().click({ timeout: 2000 }).catch(()=>{}); }
+    if (await b.count()) {
+      await b.first().click({ timeout: 2000 }).catch(() => {});
+    }
   }
+  // Iframe-based banners
   for (const frame of page.frames()) {
     try {
       const fb = frame.locator('button:has-text("Akzeptieren"), button:has-text("Alle akzeptieren")');
-      if (await fb.count()) { await fb.first().click({ timeout: 2000 }).catch(()=>{}); }
+      if (await fb.count()) {
+        await fb.first().click({ timeout: 2000 }).catch(() => {});
+      }
     } catch {}
   }
 }
@@ -27,7 +32,9 @@ const SEL = {
   inputZip: 'input[name="tx_biohandel_plg[searchplz]"], input[placeholder*="Postleitzahl" i], input[aria-label*="Postleitzahl" i], input[placeholder*="PLZ" i]',
 };
 
-function normalizeSpace(s) { return (s || '').replace(/[\s\u00A0]+/g, ' ').trim(); }
+function normalizeSpace(s) {
+  return (s || '').replace(/[\s\u00A0]+/g, ' ').trim();
+}
 
 function dedupKey(item, mode) {
   if (mode === 'detailUrl') return (item.detailUrl || '').toLowerCase().trim();
@@ -40,7 +47,7 @@ async function selectRadius(page, radiusKm) {
     try {
       const first = selByName.first();
       const options = await first.locator('option').allTextContents();
-      let idx = options.findIndex(t => (t||'').includes(`${radiusKm}`));
+      let idx = options.findIndex(t => (t || '').includes(`${radiusKm}`));
       if (idx < 0) idx = 0;
       await first.selectOption({ index: Math.max(0, idx) });
       return;
@@ -49,16 +56,16 @@ async function selectRadius(page, radiusKm) {
   const sel = page.locator('select');
   if (await sel.count()) {
     const options = await sel.first().locator('option').allTextContents();
-    let idx = options.findIndex(t => (t||'').includes(`${radiusKm}`));
+    let idx = options.findIndex(t => (t || '').includes(`${radiusKm}`));
     if (idx < 0) idx = 0;
     await sel.first().selectOption({ index: Math.max(0, idx) });
     return;
   }
   const combo = page.locator('[role="combobox"], [data-radius]');
   if (await combo.count()) {
-    await combo.first().click().catch(()=>{});
+    await combo.first().click().catch(() => {});
     const opt = page.locator(`text=/^\s*${radiusKm}\s*km\s*$/i`);
-    if (await opt.count()) await opt.first().click().catch(()=>{});
+    if (await opt.count()) await opt.first().click().catch(() => {});
   }
 }
 
@@ -74,7 +81,7 @@ async function fillZip(page, postalCode) {
       return;
     }
   } catch {}
-  // Fallback: set via JS
+  // Fallback: set via JS with a single object argument
   await page.evaluate(({ value, sel }) => {
     const el = document.querySelector(sel);
     if (!el) throw new Error('ZIP input not found');
@@ -83,30 +90,26 @@ async function fillZip(page, postalCode) {
     el.style.visibility = 'visible';
     el.style.opacity = '1';
     el.value = String(value);
-    ['input','change','keyup'].forEach(e => el.dispatchEvent(new Event(e, { bubbles: true })));
+    ['input', 'change', 'keyup'].forEach(e => el.dispatchEvent(new Event(e, { bubbles: true })));
   }, { value: String(postalCode), sel: SEL.inputZip });
 }
 
 async function triggerSearch(page) {
-  // Focus input then try Enter
+  // Focus input then press Enter
   const input = page.locator(SEL.inputZip).first();
   try { await input.focus({ timeout: 1000 }); } catch {}
   try { await page.keyboard.press('Enter'); } catch {}
 
-  // Try native submit button in same form
-  const btn = page.locator('form:has(input[name="tx_biohandel_plg[searchplz]"]) button[type="submit"], button:has-text("Händler finden"), button:has-text("BIO-HÄNDLER FINDEN"), button:has-text("Suchen")').first();
+  // Try native submit button
+  const btn = page.locator(
+    'form:has(input[name="tx_biohandel_plg[searchplz]"]) button[type="submit"], ' +
+    'button:has-text("Händler finden"), button:has-text("BIO-HÄNDLER FINDEN"), button:has-text("Suchen")'
+  ).first();
   if (await btn.count()) {
-    await btn.click().catch(()=>{});
+    await btn.click().catch(() => {});
     return;
   }
-  // Fallback: submit form via JS
-  await page.evaluate((sel) => {
-    const input = document.querySelector(sel) || document.querySelector('input[placeholder*="PLZ" i]');
-    const form = input ? input.form : document.querySelector('form');
-    if (form && form.requestSubmit) form.requestSubmit();
-    else if (form) form.submit();
-  }, SEL.inputZip);
-}
+  // Fallback: submit via JS
   await page.evaluate((sel) => {
     const input = document.querySelector(sel) || document.querySelector('input[placeholder*="PLZ" i]');
     const form = input ? input.form : document.querySelector('form');
@@ -117,24 +120,19 @@ async function triggerSearch(page) {
 
 async function waitForResults(page) {
   const startUrl = page.url();
-  // Wait for potential navigation or XHR rendering
   try { await page.waitForLoadState('networkidle', { timeout: 20000 }); } catch {}
   for (let i = 0; i < 40; i++) {
     const any = await page.evaluate(() => {
-      const hasH1 = !!document.querySelector('h1,h2,h3');
       const text = document.body.innerText || '';
       const selectors = [
         'a:has-text("DETAILS")',
         '.dealer, .dealer-item, .bh-dealer, .result, .entry, .store, [data-dealer]',
-        'section:has-text("Bioläden")',
-        '.list, .results, [data-results]'
+        '.list, .results, [data-results]',
       ];
       const foundSel = selectors.some(s => {
-        try {
-          return document.querySelector(s) != null;
-        } catch { return false; }
+        try { return document.querySelector(s) != null; } catch { return false; }
       });
-      return hasH1 || foundSel || /(Bio-?Händ(ler|ler)|Ergebnisse)/i.test(text);
+      return foundSel || /(Bio-?Händ(ler|ler)|Ergebnisse|Treffer)/i.test(text);
     });
     const urlChanged = page.url() !== startUrl;
     if (any || urlChanged) break;
@@ -156,7 +154,9 @@ async function extractItems(page) {
   const items = await page.evaluate(() => {
     const norm = (s) => (s || '').replace(/[\s\u00A0]+/g, ' ').trim();
     const blocks = [];
-    const candidates = Array.from(document.querySelectorAll('article, li, .card, .result, .dealer, .entry, .store')).filter(n => {
+    const candidates = Array.from(
+      document.querySelectorAll('article, li, .card, .result, .dealer, .entry, .store')
+    ).filter(n => {
       const t = n.textContent || '';
       return /DETAILS/i.test(t) || /\(\s*\d+[\.,]\d+\s*km\s*\)/i.test(t) || /Bioladen|Hof|Markt|Lieferservice/i.test(t);
     });
@@ -233,14 +233,14 @@ await Actor.main(async () => {
 
       try { await fillZip(page, postalCode); }
       catch (e) {
-        await page.screenshot({ path: `screenshot_${postalCode}_fill_error.png`, fullPage: true }).catch(()=>{});
+        await page.screenshot({ path: `screenshot_${postalCode}_fill_error.png`, fullPage: true }).catch(() => {});
         throw e;
       }
 
       await selectRadius(page, radiusKm);
 
-      // Optional: toggles for categories (best-effort; UI variiert)
-      for (const label of ['Bioläden','Marktstände','Lieferservice']) {
+      // Optional toggles if vorhanden
+      for (const label of ['Bioläden', 'Marktstände', 'Lieferservice']) {
         try { await page.locator(`text=${label}`).first().click({ timeout: 500 }); } catch {}
       }
 
@@ -249,12 +249,11 @@ await Actor.main(async () => {
       await autoScroll(page, 20);
 
       const items = await extractItems(page);
+
       if (items.length === 0) {
-        // Debug dump
         try { await page.screenshot({ path: `debug_${postalCode}.png`, fullPage: true }); } catch {}
         try {
           const html = await page.content();
-          const { KeyValueStore } = await import('apify');
           const store = await KeyValueStore.open();
           await store.setValue(`debug_${postalCode}.html`, html, { contentType: 'text/html; charset=utf-8' });
         } catch {}
@@ -270,7 +269,7 @@ await Actor.main(async () => {
       }
       log.info(`<< ${postalCode}: saved=${kept}, dedup_dropped=${dropped}`);
       await page.close();
-    }
+    },
   });
 
   const requests = postalCodes.map(pc => ({ url: START_URL, userData: { postalCode: String(pc) } }));
