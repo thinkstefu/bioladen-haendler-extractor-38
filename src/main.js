@@ -88,8 +88,25 @@ async function fillZip(page, postalCode) {
 }
 
 async function triggerSearch(page) {
+  // Focus input then try Enter
+  const input = page.locator(SEL.inputZip).first();
+  try { await input.focus({ timeout: 1000 }); } catch {}
+  try { await page.keyboard.press('Enter'); } catch {}
+
+  // Try native submit button in same form
   const btn = page.locator('form:has(input[name="tx_biohandel_plg[searchplz]"]) button[type="submit"], button:has-text("Händler finden"), button:has-text("BIO-HÄNDLER FINDEN"), button:has-text("Suchen")').first();
-  if (await btn.count()) { await btn.click().catch(()=>{}); return; }
+  if (await btn.count()) {
+    await btn.click().catch(()=>{});
+    return;
+  }
+  // Fallback: submit form via JS
+  await page.evaluate((sel) => {
+    const input = document.querySelector(sel) || document.querySelector('input[placeholder*="PLZ" i]');
+    const form = input ? input.form : document.querySelector('form');
+    if (form && form.requestSubmit) form.requestSubmit();
+    else if (form) form.submit();
+  }, SEL.inputZip);
+}
   await page.evaluate((sel) => {
     const input = document.querySelector(sel) || document.querySelector('input[placeholder*="PLZ" i]');
     const form = input ? input.form : document.querySelector('form');
@@ -99,8 +116,30 @@ async function triggerSearch(page) {
 }
 
 async function waitForResults(page) {
-  await page.waitForTimeout(1200);
-  await page.waitForLoadState('networkidle');
+  const startUrl = page.url();
+  // Wait for potential navigation or XHR rendering
+  try { await page.waitForLoadState('networkidle', { timeout: 20000 }); } catch {}
+  for (let i = 0; i < 40; i++) {
+    const any = await page.evaluate(() => {
+      const hasH1 = !!document.querySelector('h1,h2,h3');
+      const text = document.body.innerText || '';
+      const selectors = [
+        'a:has-text("DETAILS")',
+        '.dealer, .dealer-item, .bh-dealer, .result, .entry, .store, [data-dealer]',
+        'section:has-text("Bioläden")',
+        '.list, .results, [data-results]'
+      ];
+      const foundSel = selectors.some(s => {
+        try {
+          return document.querySelector(s) != null;
+        } catch { return false; }
+      });
+      return hasH1 || foundSel || /(Bio-?Händ(ler|ler)|Ergebnisse)/i.test(text);
+    });
+    const urlChanged = page.url() !== startUrl;
+    if (any || urlChanged) break;
+    await page.waitForTimeout(500);
+  }
 }
 
 async function autoScroll(page, maxSteps = 20) {
@@ -210,6 +249,17 @@ await Actor.main(async () => {
       await autoScroll(page, 20);
 
       const items = await extractItems(page);
+      if (items.length === 0) {
+        // Debug dump
+        try { await page.screenshot({ path: `debug_${postalCode}.png`, fullPage: true }); } catch {}
+        try {
+          const html = await page.content();
+          const { KeyValueStore } = await import('apify');
+          const store = await KeyValueStore.open();
+          await store.setValue(`debug_${postalCode}.html`, html, { contentType: 'text/html; charset=utf-8' });
+        } catch {}
+      }
+
       let kept = 0, dropped = 0;
       for (const it of items) {
         const key = dedupKey(it, deduplicateBy);
