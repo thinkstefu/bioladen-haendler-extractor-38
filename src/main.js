@@ -75,7 +75,7 @@ async function fillZip(page, postalCode) {
     }
   } catch {}
   // Fallback: set via JS
-  await page.evaluate((value, sel) => {
+  await page.evaluate(({ value, sel }) => {
     const el = document.querySelector(sel);
     if (!el) throw new Error('ZIP input not found');
     el.removeAttribute('disabled');
@@ -84,7 +84,7 @@ async function fillZip(page, postalCode) {
     el.style.opacity = '1';
     el.value = String(value);
     ['input','change','keyup'].forEach(e => el.dispatchEvent(new Event(e, { bubbles: true })));
-  }, String(postalCode), SEL.inputZip);
+  }, { value: String(postalCode), sel: SEL.inputZip });
 }
 
 async function triggerSearch(page) {
