@@ -1,28 +1,36 @@
-# Bioladen.de Händlersuche – stabiler Actor
+# Bioladen.de Händlersuche – stabiler Actor (ALL-DE-PLZ)
 
-**Ziel:** Exakte Extraktion der Händlerliste von  
-https://www.bioladen.de/bio-haendler-suche (PLZ + Radius).
+**Ziel:** Für jede deutsche PLZ das Eingabefeld auf https://www.bioladen.de/bio-haendler-suche befüllen, Suche starten, und die Ergebnisse **inkl. Detailinfos** extrahieren.
 
-## Features
-- Steuert die Webseite per **Playwright (Crawlee)** – kein OSM.
-- Unterstützt Filter **Bioläden**, **Marktstände**, **Lieferservice**.
-- **Dedup nach `detailUrl`** (Fallback: `name+address`).
-- Stabil: Cookie-Banner-Handling (inkl. Iframe), JS-Fallback zum Befüllen der PLZ,
-  Auto-Scroll, Warte-Strategien.
+## PLZ-Quellen
+- `postalCodesMode = "input"` → nimmt `postalCodes` aus dem Input.
+- `postalCodesMode = "kv"` → lädt KeyValueStore-Datei **de_plz.txt** (eine PLZ pro Zeile).
+- `postalCodesMode = "range"` (Default) → generiert 5-stellige PLZ. Über `rangePrefixes` steuerbar (Standard: repräsentative Spanne). Für Full-Run: `["all"]`.
 
-## Input (Sanity 20095 / 25 km)
+## Beispiel-Input (Sanity 20095 / 25 km)
 ```json
 {
   "postalCodes": ["20095"],
+  "postalCodesMode": "input",
   "radiusKm": 25,
-  "filters": { "biolaeden": true, "marktstaende": true, "lieferservice": true },
+  "deduplicateBy": "detailUrl",
+  "maxConcurrency": 1
+}
+```
+
+## Beispiel-Input (ALLE deutschen PLZ mit Generator – vorsichtig!)
+```json
+{
+  "postalCodesMode": "range",
+  "rangePrefixes": ["all"],
+  "radiusKm": 25,
   "deduplicateBy": "detailUrl",
   "maxConcurrency": 1
 }
 ```
 
 ## Output-Schema
-```text
+```
 name, street, zip, city, country, lat, lng, phone, email, website,
 openingHours, detailUrl, source, scrapedAt, distanceKm, category
 ```

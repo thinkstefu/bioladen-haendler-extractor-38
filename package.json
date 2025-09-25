@@ -1,6 +1,6 @@
 {
   "name": "bioladen-de-haendlersuche-scraper",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "type": "module",
   "description": "Apify Actor: Scraper für https://www.bioladen.de/bio-haendler-suche",
   "main": "src/main.js",
