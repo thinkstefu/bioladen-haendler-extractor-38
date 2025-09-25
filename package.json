@@ -1,0 +1,18 @@
+{
+  "name": "bioladen-de-haendlersuche-scraper",
+  "version": "1.0.1",
+  "type": "module",
+  "description": "Apify Actor: Scraper für https://www.bioladen.de/bio-haendler-suche",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "node src/main.js"
+  },
+  "dependencies": {
+    "apify": "^3.4.5",
+    "crawlee": "^3.15.0",
+    "playwright": "1.55.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
